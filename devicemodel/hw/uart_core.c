@@ -394,6 +394,52 @@ uart_drain(int fd, enum ev_type ev, void *arg)
 	pthread_mutex_unlock(&uart->mtx);
 }
 
+speed_t int_to_baud(int baud) {
+    switch(baud) {
+        case 300:
+            return B300;
+        case 1200:
+            return B1200;
+        case 2400:
+            return B2400;
+        case 4800:
+            return B4800;
+        case 9600:
+            return B9600;
+        case 19200:
+            return B19200;
+        case 38400:
+            return B38400;
+        case 57600:
+            return B57600;
+        case 115200:
+            return B115200;
+        default:
+            return B9600;
+    }
+}
+
+void
+uart_set_baud(struct uart_vdev *uart)
+{
+	struct termios tio;
+	speed_t baud_rate = 0;
+
+	tcgetattr(uart->be.fd, &tio);
+
+	baud_rate = DEFAULT_RCLK / 16 / uart->dll;
+	baud_rate = int_to_baud(baud_rate);
+	cfsetispeed(&tio, baud_rate);
+	cfsetospeed(&tio, baud_rate);
+	cfmakeraw(&tio);
+	tio.c_cflag |= CLOCAL;
+	tcflush(uart->be.fd, TCIOFLUSH);
+
+	if (tcsetattr(uart->be.fd, TCSANOW, &tio) != 0) {
+		pr_err("Error setting serial port attributes");
+	}
+}
+
 void
 uart_write(struct uart_vdev *uart, int offset, uint8_t value)
 {
@@ -408,6 +454,7 @@ uart_write(struct uart_vdev *uart, int offset, uint8_t value)
 	if ((uart->lcr & LCR_DLAB) != 0) {
 		if (offset == REG_DLL) {
 			uart->dll = value;
+			uart_set_baud(uart);
 			goto done;
 		}
 
