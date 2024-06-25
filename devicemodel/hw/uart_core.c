@@ -401,6 +401,55 @@ uart_drain(int fd, enum ev_type ev, void *arg)
 }
 
 void
+uart_update_speed(struct uart_vdev *uart)
+{
+	struct termios tio;
+	uint32_t speed = 0;
+	int data;
+	speed_t baud_rate = 0;
+
+	data = (uart->dlh << 8) | uart->dll;
+
+#define check_speed(val) \
+	if (speed <= val) {  \
+		baud_rate = B##val;    \
+		goto done;       \
+	}
+	speed = DEFAULT_RCLK / 16 / data;
+	check_speed(50);
+	check_speed(75);
+	check_speed(110);
+	check_speed(134);
+	check_speed(150);
+	check_speed(200);
+	check_speed(300);
+	check_speed(600);
+	check_speed(1200);
+	check_speed(1800);
+	check_speed(2400);
+	check_speed(4800);
+	check_speed(9600);
+	check_speed(19200);
+	check_speed(38400);
+	check_speed(57600);
+	check_speed(115200);
+	baud_rate = B115200;
+
+#undef check_speed
+done:
+	tcgetattr(uart->be.fd, &tio);
+	cfsetispeed(&tio, baud_rate);
+	cfsetospeed(&tio, baud_rate);
+	cfmakeraw(&tio);
+	tio.c_cflag |= CLOCAL;
+	tcflush(uart->be.fd, TCIOFLUSH);
+
+	if (tcsetattr(uart->be.fd, TCSANOW, &tio) != 0) {
+		pr_err("Error setting serial port attributes");
+	}
+}
+
+void
 uart_write(struct uart_vdev *uart, int offset, uint8_t value)
 {
 	int fifosz;
@@ -419,6 +468,7 @@ uart_write(struct uart_vdev *uart, int offset, uint8_t value)
 
 		if (offset == REG_DLH) {
 			uart->dlh = value;
+			uart_update_speed(uart);
 			goto done;
 		}
 	}
